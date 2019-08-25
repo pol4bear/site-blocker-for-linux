@@ -99,6 +99,9 @@ int HarmfulSiteBlocker::InspectPacket(nfq_q_handle *queue_handle_in, nfgenmsg *m
     tcphdr *tcp_header = reinterpret_cast<tcphdr*>(packet_data + ip_header_length);
     int tcp_header_length = tcp_header->doff * 4;
 
+    if(ntohs(tcp_header->dest) != 80)
+        return nfq_set_verdict(queue_handle_in, id, NF_ACCEPT, 0, nullptr);
+
     int payload_length = ntohs(ip_header->tot_len) - ip_header_length - tcp_header_length;
 
     if(payload_length < 1)
