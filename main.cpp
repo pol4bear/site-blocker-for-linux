@@ -4,7 +4,7 @@
 using namespace std;
 
 void OnReceive(string message){
-    cout << "[+] " << message << "\n";
+    cout << "[-] " << message << "\n";
 }
 
 int main(int argc, char *argv[])
