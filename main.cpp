@@ -4,7 +4,7 @@
 using namespace std;
 
 void OnReceive(string message){
-    cout << "[-] " << message << "\n";
+    cout << "[+] " << message << "\n";
 }
 
 int main(int argc, char *argv[])
@@ -27,7 +27,7 @@ int main(int argc, char *argv[])
         int receive;
         while ((receive = blocker.Receive()) >= 0 || (receive < 0 && errno == ENOBUFS)) {
             if (receive < 0) {
-                cerr << "[!] Packet losed\n";
+                cerr << "[-] Packet losed\n";
                 continue;
             }
 

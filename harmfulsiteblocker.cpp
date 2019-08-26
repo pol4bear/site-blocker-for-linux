@@ -137,7 +137,7 @@ int HarmfulSiteBlocker::InspectPacket(nfq_q_handle *queue_handle_in, nfgenmsg *m
 
     // Accept packet if packet is not HTTP request
     {
-        regex http_request("^ *(GET|POST) +((\\/[\\d\\w-_]*)(\\/[\\d\\w-_]+)*) +HTTP\\/1\\.[0-1] *\\r?$");
+        regex http_request("^ *(GET|POST) +((\\/[\\d\\w-_/\\?%\\*:|\"\\<\\>\\. ]*)(\\/[\\d\\w-_/\\?%\\*:|\"\\<\\>\\. ]+)*) +HTTP\\/1\\.[0-1] *\\r?$");
         smatch matches;
         if(!regex_search(line, matches, http_request))
             return nfq_set_verdict(queue_handle_in, id, NF_ACCEPT, 0, nullptr);
