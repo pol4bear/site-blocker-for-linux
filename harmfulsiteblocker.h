@@ -31,5 +31,7 @@ private:
     static void ReadHarmfulSitesFromFile(std::string file_name_in);
 
     static int InspectPacket(nfq_q_handle *queue_handle, nfgenmsg *message, nfq_data *netfilter_data, void *data);
-    static bool IsInHarmfulList(std::string url_in);
+    static bool IsTcpPacket(iphdr ip_header, uint8_t *data, tcphdr &tcp_header_out);
+    static bool IsHttpPacket(const std::string &data, std::string &resource);
+    static bool IsInHarmfulRequest(const std::string &data, std::string &host);
 };

@@ -99,6 +99,9 @@ int HarmfulSiteBlocker::InspectPacket(nfq_q_handle *queue_handle_in, nfgenmsg *m
     uint16_t protocol = ntohs(packet_header->hw_protocol);
 
     // Accept packet if L3 protocol is not IP
+    iphdr *ip_header;
+    int ip_header_length;
+
     if(protocol != ETHERTYPE_IP)
         return nfq_set_verdict(queue_handle_in, id, NF_ACCEPT, 0, nullptr);
     data_length = nfq_get_payload(netfilter_data_in, &packet_data);
@@ -106,19 +109,18 @@ int HarmfulSiteBlocker::InspectPacket(nfq_q_handle *queue_handle_in, nfgenmsg *m
     // Accept packet if packet data length is smaller than 1
     if(data_length < 1)
         return nfq_set_verdict(queue_handle_in, id, NF_ACCEPT, 0, nullptr);
-
-    iphdr *ip_header = reinterpret_cast<iphdr*>(packet_data);
-    int ip_header_length = ip_header->ihl * 4;
+    ip_header = reinterpret_cast<iphdr*>(packet_data);
+    ip_header_length = ip_header->ihl * 4;
 
     // Accept packet if L4 protocol is not TCP
-    if(ip_header->protocol != IPPROTO_TCP)
+    tcphdr tcp_header;
+    if (!IsTcpPacket(*ip_header, packet_data, tcp_header))
         return nfq_set_verdict(queue_handle_in, id, NF_ACCEPT, 0, nullptr);
 
-    tcphdr *tcp_header = reinterpret_cast<tcphdr*>(packet_data + ip_header_length);
-    int tcp_header_length = tcp_header->doff * 4;
+    int tcp_header_length = tcp_header.doff * 4;
 
     // Accept packet if destination port is not 80
-    if(ntohs(tcp_header->dest) != 80)
+    if(ntohs(tcp_header.dest) != 80)
         return nfq_set_verdict(queue_handle_in, id, NF_ACCEPT, 0, nullptr);
 
     int payload_length = ntohs(ip_header->tot_len) - ip_header_length - tcp_header_length;
@@ -128,39 +130,17 @@ int HarmfulSiteBlocker::InspectPacket(nfq_q_handle *queue_handle_in, nfgenmsg *m
         return nfq_set_verdict(queue_handle_in, id, NF_ACCEPT, 0, nullptr);
 
     string str_data((char*)packet_data + ip_header_length + tcp_header_length, payload_length);
-    stringstream stream_data;
-    stream_data.str(str_data);
 
-    string line;
-    getline(stream_data, line);
     string resource;
 
     // Accept packet if packet is not HTTP request
-    {
-        regex http_request("^ *(GET|POST) +((\\/[\\d\\w-_/\\?%\\*:|\"\\<\\>\\. ]*)(\\/[\\d\\w-_/\\?%\\*:|\"\\<\\>\\. ]+)*) +HTTP\\/1\\.[0-1] *\\r?$");
-        smatch matches;
-        if(!regex_search(line, matches, http_request))
-            return nfq_set_verdict(queue_handle_in, id, NF_ACCEPT, 0, nullptr);
+    if (!IsHttpPacket(str_data, resource))
+        return nfq_set_verdict(queue_handle_in, id, NF_ACCEPT, 0, nullptr);
 
-        resource = matches[2].str();
-    }
-
-    getline(stream_data, line);
     string host;
 
-    // Get hostname
-    {
-        regex http_host("^ *Host: +([\\d\\w.]+) *\\r?$");
-        smatch matches;
-        if(!regex_search(line, matches, http_host))
-            return nfq_set_verdict(queue_handle_in, id, NF_ACCEPT, 0, nullptr);
-
-        host = matches[1].str();
-    }
-
-
     // Accept packet if hostname is not in harmful sites list
-    if(IsInHarmfulList(host)){
+    if(IsInHarmfulRequest(str_data, host)){
         string msg = "Connection to " + host + resource + " blocked";
         if(on_event_occured != nullptr)
             on_event_occured(msg);
@@ -171,11 +151,43 @@ int HarmfulSiteBlocker::InspectPacket(nfq_q_handle *queue_handle_in, nfgenmsg *m
     return nfq_set_verdict(queue_handle_in, id, NF_ACCEPT, 0, nullptr);
 }
 
-// Check if url is in harmful site urls
-bool HarmfulSiteBlocker::IsInHarmfulList(string url_in)
+bool HarmfulSiteBlocker::IsTcpPacket(iphdr ip_header, uint8_t *data, tcphdr &tcp_header_out)
 {
+    if(ip_header.protocol != IPPROTO_TCP)
+        return false;
+
+    tcphdr *tcp_header = reinterpret_cast<tcphdr*>(data + ip_header.ihl * 4);
+    tcp_header_out = *tcp_header;
+
+    return true;
+}
+
+bool HarmfulSiteBlocker::IsHttpPacket(const string &data, string &resource)
+{
+    regex http_request("^ *(GET|POST) +((\\/[\\d\\w-_/\\?%\\*:|\"\\<\\>\\. ]*)(\\/[\\d\\w-_/\\?%\\*:|\"\\<\\>\\. ]+)*) +HTTP\\/1\\.[0-1] *\\r?");
+    smatch matches;
+
+    if(!regex_search(data, matches, http_request))
+        return false;
+
+    resource = matches[2].str();
+
+    return true;
+}
+
+bool HarmfulSiteBlocker::IsInHarmfulRequest(const string &data, string &host)
+{
+    // Get hostname
+    regex http_host("\\r\\n *Host: +([\\d\\w.]+) *");
+    smatch matches;
+    if(!regex_search(data, matches, http_host))
+        return false;
+
+    host = matches[1].str();
+
+    // Check if host is in harmful list
     for(vector<string>::iterator url = harmful_sites.begin(); url != harmful_sites.end(); url++) {
-        if(url_in == *url)
+        if(host == *url)
             return true;
     }
 
